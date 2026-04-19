@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Condomínio | Rua Central | Casas 3.1m</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        #ui {
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(10, 15, 25, 0.85); backdrop-filter: blur(10px);
+            padding: 20px; border-radius: 12px; color: white; border: 1px solid rgba(255,255,255,0.2);
+            max-width: 320px;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 18px; color: #4fc3f7; }
+        p { margin: 0 0 15px 0; font-size: 13px; line-height: 1.4; color: #ccc; }
+        
+        .note {
+            background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; font-size: 12px;
+            border-left: 4px solid #e2a85c; margin-bottom: 10px;
+        }
+
+        .instructions {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 20px;
+            color: #fff; font-size: 13px; font-weight: bold; text-align: center; pointer-events: none;
+            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.3);
+            z-index: 99;
+        }
+
+        #btn-interior {
+            display: block; width: 100%; padding: 12px; margin-top: 15px;
+            background: linear-gradient(135deg, #e2a85c, #d18d3c); color: #fff;
+            border: none; border-radius: 6px; font-weight: bold; font-size: 14px;
+            cursor: pointer; transition: transform 0.2s;
+        }
+        #btn-interior:hover { transform: scale(1.02); }
+
+        .measure-label {
+            background: rgba(0, 0, 0, 0.7); color: #4fc3f7; padding: 4px 8px;
+            border-radius: 4px; font-size: 11px; font-weight: bold; font-family: monospace;
+            pointer-events: none; border: 1px solid #4fc3f7; white-space: nowrap;
+        }
+        
+        .room-label {
+            background: rgba(255, 255, 255, 0.85); color: #222; padding: 2px 6px;
+            border-radius: 4px; font-size: 10px; font-weight: bold; pointer-events: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); border: 1px solid #ccc;
+        }
+        .int-label { color: #e2a85c; background: rgba(30, 30, 30, 0.9); }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Visão Interna (Planta Humanizada)</h1>
+        <p>Explore a distribuição milimétrica da casa de 3,1m por dentro! Móveis desenhados em escala real.</p>
+        <div class="note">📍 Térreo: Sala, Cozinha com Ilha, Banheiro 2x1.3m e Lavanderia.</div>
+        <div class="note">📍 Cima: Quarto Casal GIGANTE, Banheiro e Quarto Solteiro.</div>
+        <button id="btn-interior">🔍 Ver Interior da Casa 1</button>
+    </div>
+    
+    <div class="instructions">
+        🖱️ Arraste para Girar | Botão Direito para Mover | Scroll para Zoom
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // --- Variáveis de Controle ---
+        let isInteriorMode = false;
+        let houseWallsToHide = [];
+        let interiorLabels = [];
+        let casa1Group = null;
+
+        // --- Cena Básica ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        
+        const ambientGroup = new THREE.Group(); // Grupo para todo o resto (rua, vizinhos, casas 2/3/4)
+        scene.add(ambientGroup);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 20, -15);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(5, 0, 10);
+        controls.maxPolarAngle = Math.PI;
+
+        // --- Luzes ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const sunLight = new THREE.DirectionalLight(0xfffaee, 1.0);
+        sunLight.position.set(15, 20, 5);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.left = -20;
+        sunLight.shadow.camera.right = 20;
+        sunLight.shadow.camera.top = 20;
+        sunLight.shadow.camera.bottom = -20;
+        scene.add(sunLight);
+
+        // --- Materiais ---
+        const matRua = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+        const matCalcada = new THREE.MeshStandardMaterial({ color: 0x999999 });
+        const matParede = new THREE.MeshStandardMaterial({ color: 0xf5f5f5 });
+        const matVidro = new THREE.MeshPhysicalMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.6 });
+        const matEsquadria = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const matChao = new THREE.MeshStandardMaterial({ color: 0x446633 });
+        const matAgua = new THREE.MeshStandardMaterial({ color: 0x3388dd });
+        const matMetal = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8 });
+        const matMadeira = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
+
+        // Materiais do Interior
+        const matSofa = new THREE.MeshStandardMaterial({ color: 0x3a4a5a, roughness: 0.8 });
+        const matBranco = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+        const matCama = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+        const matEscada = new THREE.MeshStandardMaterial({ color: 0x999999 });
+
+        // --- Utils de Label ---
+        function createLabel(text, x, y, z, className = 'measure-label') {
+            const div = document.createElement('div');
+            div.className = className;
+            div.textContent = text;
+            const label = new CSS2DObject(div);
+            label.position.set(x, y, z);
+            ambientGroup.add(label);
+            return label;
+        }
+
+        function createIntLabel(text, x, y, z, parentGroup) {
+            const div = document.createElement('div');
+            div.className = 'room-label int-label';
+            div.textContent = text;
+            const label = new CSS2DObject(div);
+            label.position.set(x, y, z);
+            label.visible = false; // Invisível até ativar o modo interior
+            interiorLabels.push(label);
+            if(parentGroup) parentGroup.add(label);
+            return label;
+        }
+
+        // --- Terreno e Rua Interna ---
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), matChao);
+        ground.rotation.x = -Math.PI / 2; ground.position.y = -0.1; ground.receiveShadow = true; ambientGroup.add(ground);
+        const base = new THREE.Mesh(new THREE.BoxGeometry(10, 0.1, 20), matCalcada);
+        base.position.set(5, 0.05, 10); base.receiveShadow = true; ambientGroup.add(base);
+        const rua = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.12, 20), matRua);
+        rua.position.set(5.0, 0.06, 10); rua.receiveShadow = true; ambientGroup.add(rua);
+
+        // --- Calçada e Rua Pública ---
+        const calcadaPublica = new THREE.Mesh(new THREE.BoxGeometry(10, 0.1, 2.5), matCalcada);
+        calcadaPublica.position.set(5.0, 0.05, -1.25); calcadaPublica.receiveShadow = true; ambientGroup.add(calcadaPublica);
+        const matAsfalto = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+        const rampa = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.11, 2.5), matAsfalto);
+        rampa.position.set(5.0, 0.06, -1.25); rampa.receiveShadow = true; ambientGroup.add(rampa);
+        const ruaPublica = new THREE.Mesh(new THREE.BoxGeometry(40, 0.05, 8.0), matAsfalto);
+        ruaPublica.position.set(5.0, 0.02, -6.5); ruaPublica.receiveShadow = true; ambientGroup.add(ruaPublica);
+        const matFaixa = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        for(let i = -15; i <= 25; i += 3) {
+            const faixa = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.2), matFaixa);
+            faixa.position.set(i, 0.02, -6.5); ambientGroup.add(faixa);
+        }
+
+        createLabel("← 3.1m →", 1.55, 0.2, 0.5); createLabel("← 3.8m RUA →", 5.0, 0.2, 0.5); createLabel("← 3.1m →", 8.45, 0.2, 0.5);
+        createLabel("RUA PÚBLICA", 5.0, 0.2, -5.0); createLabel("20m PROFUNDIDADE", -1.0, 0.2, 10);
+
+        // Portão e Muro
+        const portao = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.5, 0.1), matMetal);
+        portao.position.set(5.0, 1.25, 0); portao.castShadow = true; ambientGroup.add(portao);
+        const muroFundo = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.5, 0.2), matParede);
+        muroFundo.position.set(5.0, 1.25, 20); muroFundo.castShadow = true; ambientGroup.add(muroFundo);
+        
+        // --- Edícula ---
+        const ediculaGroup = new THREE.Group();
+        const telhadoEdicula = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.15, 3.0), matMadeira);
+        telhadoEdicula.position.set(5.0, 2.8, 18.5); ediculaGroup.add(telhadoEdicula);
+        const pilarEsq = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.8, 0.15), matMadeira);
+        pilarEsq.position.set(3.2, 1.4, 17.1); ediculaGroup.add(pilarEsq);
+        const pilarDir = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.8, 0.15), matMadeira);
+        pilarDir.position.set(6.8, 1.4, 17.1); ediculaGroup.add(pilarDir);
+        const matTijolo = new THREE.MeshStandardMaterial({ color: 0x8b3a3a, roughness: 0.9 });
+        const churras = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 0.8), matTijolo);
+        churras.position.set(4.0, 1.25, 19.5); ediculaGroup.add(churras);
+        const chamine = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.5, 0.6), matTijolo);
+        chamine.position.set(4.0, 3.25, 19.5); ediculaGroup.add(chamine);
+        const bancada = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.9, 0.8), matCalcada);
+        bancada.position.set(5.8, 0.45, 19.5); ediculaGroup.add(bancada);
+        const mesa = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 0.9), matMadeira);
+        mesa.position.set(5.0, 0.4, 18.0); ediculaGroup.add(mesa);
+        ambientGroup.add(ediculaGroup);
+
+        // Carro Gol G7
+        function createCar(color) {
+            const group = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.6, 3.89), new THREE.MeshStandardMaterial({color: color}));
+            body.position.y = 0.4; body.castShadow = true; group.add(body);
+            const top = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.6, 2.0), new THREE.MeshStandardMaterial({color: 0x111111}));
+            top.position.set(0, 1.0, -0.2); top.castShadow = true; group.add(top);
+            return group;
+        }
+
+        // --- Casa (Com Interior para a Casa 1) ---
+        function createHouseBlock(xBase, isRightSide, color1, color2, isCasa1 = false) {
+            const group = new THREE.Group();
+            const w = 3.1; const hTerreo = 3.0; const hSup = 3.0;
+            
+            const matParede1 = new THREE.MeshStandardMaterial({ color: color1, transparent: true, opacity: 1.0 });
+            const matParede2 = new THREE.MeshStandardMaterial({ color: color2 });
+            const matTeto1 = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 1.0 });
+            
+            // CASA 1
+            const terreo1 = new THREE.Mesh(new THREE.BoxGeometry(w, hTerreo, 7.5), matParede1);
+            terreo1.position.set(w/2, hTerreo/2, 3.75); terreo1.castShadow = true; group.add(terreo1);
+            
+            const sup1 = new THREE.Mesh(new THREE.BoxGeometry(w, hSup, 10), matParede1);
+            sup1.position.set(w/2, hTerreo + hSup/2, 5.0); sup1.castShadow = true; group.add(sup1);
+
+            const teto1 = new THREE.Mesh(new THREE.BoxGeometry(w+0.2, 0.2, 10.1), matTeto1);
+            teto1.position.set(w/2, hTerreo + hSup + 0.1, 5.0); group.add(teto1);
+
+            if(isCasa1) {
+                houseWallsToHide.push(terreo1, sup1, teto1);
+            }
+
+            // Garagem e Fundo Casa 1
+            const carX = isRightSide ? (3.0 - 1.945) : (0.1 + 1.945);
+            const pilar1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, hTerreo, 0.3), matEsquadria);
+            pilar1.position.set(isRightSide ? 0.15 : w - 0.15, hTerreo/2, 9.85); group.add(pilar1);
+            const car1 = createCar(isRightSide ? 0xcc2222 : 0x2255cc);
+            car1.rotation.y = Math.PI / 2; car1.position.set(carX, 0, 8.75); group.add(car1);
+            const fundoGaragem1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, hTerreo, 2.5), matParede1);
+            fundoGaragem1.position.set(isRightSide ? w - 0.05 : 0.05, hTerreo/2, 8.75); group.add(fundoGaragem1);
+            if(isCasa1) houseWallsToHide.push(fundoGaragem1);
+
+            // CASA 2
+            const terreo2 = new THREE.Mesh(new THREE.BoxGeometry(w, hTerreo, 7.5), matParede2);
+            terreo2.position.set(w/2, hTerreo/2, 16.25); group.add(terreo2);
+            const sup2 = new THREE.Mesh(new THREE.BoxGeometry(w, hSup, 10), matParede2);
+            sup2.position.set(w/2, hTerreo + hSup/2, 15.0); group.add(sup2);
+            const teto2 = new THREE.Mesh(new THREE.BoxGeometry(w+0.2, 0.2, 10.1), matEsquadria);
+            teto2.position.set(w/2, hTerreo + hSup + 0.1, 15.0); group.add(teto2);
+            
+            const pilar2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, hTerreo, 0.3), matEsquadria);
+            pilar2.position.set(isRightSide ? 0.15 : w - 0.15, hTerreo/2, 10.15); group.add(pilar2);
+            const car2 = createCar(isRightSide ? 0x22cc55 : 0xccaa22);
+            car2.rotation.y = Math.PI / 2; car2.position.set(carX, 0, 11.25); group.add(car2);
+            const fundoGaragem2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, hTerreo, 2.5), matParede2);
+            fundoGaragem2.position.set(isRightSide ? w - 0.05 : 0.05, hTerreo/2, 11.25); group.add(fundoGaragem2);
+
+            // Caixas D'Água
+            const cx1 = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1.2), matAgua);
+            cx1.position.set(w/2, hTerreo + hSup + 0.8, 5.0); group.add(cx1);
+            if(isCasa1) houseWallsToHide.push(cx1);
+            const cx2 = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1.2), matAgua);
+            cx2.position.set(w/2, hTerreo + hSup + 0.8, 15.0); group.add(cx2);
+
+            // --- Sacadas e Janelas ---
+            const guardaMat = new THREE.MeshStandardMaterial({ color: 0xaaadbb, metalness: 0.6 });
+            const vidroPortaMat = new THREE.MeshStandardMaterial({ color: 0x9fc9e0, metalness: 0.9, roughness: 0.1, emissive: 0x224466, emissiveIntensity: 0.1 });
+
+            function addOriginalBalcony(zPos, trackWalls) {
+                const sacadaLaje = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.12, 2.0), new THREE.MeshStandardMaterial({ color: 0xbcb09a }));
+                const sacadaX = isRightSide ? -0.525 : w + 0.525;
+                sacadaLaje.position.set(sacadaX, hTerreo - 0.05, zPos); group.add(sacadaLaje);
+                
+                const barraGeo = new THREE.BoxGeometry(0.08, 0.95, 0.08);
+                [-0.9, 0.9].forEach(offset => {
+                    const barra = new THREE.Mesh(barraGeo, guardaMat);
+                    barra.position.set(sacadaX, hTerreo + 0.425, zPos + offset); group.add(barra);
+                });
+                
+                const corrimao = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 2.1), guardaMat);
+                corrimao.position.set(isRightSide ? -1.01 : w + 1.01, hTerreo + 0.85, zPos); group.add(corrimao);
+
+                const janelaVidro = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.0, 1.6), vidroPortaMat);
+                janelaVidro.position.set(isRightSide ? 0 : w, hTerreo + 1.0, zPos); group.add(janelaVidro);
+                if(trackWalls) houseWallsToHide.push(janelaVidro);
+            }
+
+            function addWindow(zPos, yOffset, winW, winH, trackWalls) {
+                const janela = new THREE.Mesh(new THREE.BoxGeometry(0.08, winH, winW), vidroPortaMat);
+                janela.position.set(isRightSide ? 0 : w, yOffset, zPos); group.add(janela);
+                if(trackWalls) houseWallsToHide.push(janela);
+            }
+
+            addOriginalBalcony(1.75, isCasa1); // Sacada Casa 1
+            addWindow(8.25, hTerreo + 1.5, 1.0, 1.0, isCasa1); // Quarto 2 Casa 1
+            addWindow(1.75, 1.5, 1.5, 1.2, isCasa1); // Sala Casa 1
+
+            addOriginalBalcony(11.75, false); // Sacada Casa 2
+            addWindow(18.25, hTerreo + 1.5, 1.0, 1.0, false); 
+            addWindow(14.25, 1.5, 1.5, 1.2, false); 
+
+            // ==============================================
+            // MÓVEIS INTERNOS (PLANTA HUMANIZADA) - SOMENTE CASA 1
+            // ==============================================
+            if(isCasa1) {
+                const interiorGroup = new THREE.Group();
+                const matParedeInt = new THREE.MeshStandardMaterial({ color: 0xeeeeee }); // Paredes internas sólidas
+
+                // ----------------------------------------------
+                // ESCADA REAL (z=3.5 a 6.5, encostada na parede direita x = 2.65, largura 0.9m)
+                // ----------------------------------------------
+                const stepsCount = 16;
+                const stepH = hTerreo / stepsCount;
+                const stepD = 3.0 / stepsCount;
+                for(let i=0; i<stepsCount; i++) {
+                    const step = new THREE.Mesh(new THREE.BoxGeometry(0.9, stepH, stepD), matEscada);
+                    step.position.set(2.65, (i * stepH) + stepH/2, 3.5 + (i * stepD) + stepD/2);
+                    interiorGroup.add(step);
+                }
+                createIntLabel("ESCADA (0.9m x 3.0m)", xBase + 2.65, 2.0, 5.0, interiorGroup);
+
+                // ----------------------------------------------
+                // BANHEIRO TÉRREO (z=5.5 a 7.5, x=1.8 a 3.1) -> 1.3m x 2.0m
+                // ----------------------------------------------
+                const pBanhoTerreoZ = new THREE.Mesh(new THREE.BoxGeometry(1.3, hTerreo, 0.1), matParedeInt);
+                pBanhoTerreoZ.position.set(2.45, hTerreo/2, 5.5); interiorGroup.add(pBanhoTerreoZ);
+                houseWallsToHide.push(pBanhoTerreoZ);
+
+                const pBanhoTerreoX = new THREE.Mesh(new THREE.BoxGeometry(0.1, hTerreo, 2.0), matParedeInt);
+                pBanhoTerreoX.position.set(1.8, hTerreo/2, 6.5); interiorGroup.add(pBanhoTerreoX);
+                houseWallsToHide.push(pBanhoTerreoX);
+
+                const vasoTerreo = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.4), matBranco);
+                vasoTerreo.position.set(2.65, 0.2, 7.0); interiorGroup.add(vasoTerreo);
+                const boxTerreo = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.0, 0.8), matVidro);
+                boxTerreo.position.set(2.45, 1.0, 6.0); interiorGroup.add(boxTerreo);
+                createIntLabel("BANHEIRO TÉRREO (1.3m x 2.0m)", xBase + 2.45, 1.0, 6.5, interiorGroup);
+
+                // ----------------------------------------------
+                // LAVANDERIA (z=6.5 a 7.5, x=0 a 1.8) -> 1.8m x 1.0m
+                // ----------------------------------------------
+                const pLavanderiaZ = new THREE.Mesh(new THREE.BoxGeometry(1.8, hTerreo, 0.1), matParedeInt);
+                pLavanderiaZ.position.set(0.9, hTerreo/2, 6.5); interiorGroup.add(pLavanderiaZ);
+                houseWallsToHide.push(pLavanderiaZ);
+
+                const maqLavar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.6), matBranco);
+                maqLavar.position.set(0.4, 0.4, 7.0); interiorGroup.add(maqLavar);
+                const tanque = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, 0.4), matCalcada);
+                tanque.position.set(1.1, 0.45, 7.0); interiorGroup.add(tanque);
+                createIntLabel("LAVANDERIA (1.8m x 1.0m)", xBase + 0.9, 2.0, 7.0, interiorGroup);
+
+                // ----------------------------------------------
+                // SALA DE ESTAR DETALHADA (z=0 a 3.5)
+                // ----------------------------------------------
+                const sofaAssento = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 1.8), matSofa);
+                sofaAssento.position.set(0.6, 0.15, 1.5); interiorGroup.add(sofaAssento);
+                const sofaCostas = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 1.8), matSofa);
+                sofaCostas.position.set(0.3, 0.35, 1.5); interiorGroup.add(sofaCostas);
+                const tapete = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.02, 2.2), new THREE.MeshStandardMaterial({ color: 0x999999 }));
+                tapete.position.set(1.5, 0.01, 1.5); interiorGroup.add(tapete);
+                const mesaCentro = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.8), matMadeira);
+                mesaCentro.position.set(1.5, 0.15, 1.5); interiorGroup.add(mesaCentro);
+                const rack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 2.0), matMadeira);
+                rack.position.set(2.6, 0.25, 1.5); interiorGroup.add(rack);
+                const tv = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.9, 1.4), new THREE.MeshStandardMaterial({color: 0x111111}));
+                tv.position.set(2.8, 1.2, 1.5); interiorGroup.add(tv);
+                createIntLabel("SALA DE ESTAR (2.9m x 3.5m)", xBase + w/2, 2.0, 1.5, interiorGroup);
+
+                // ----------------------------------------------
+                // COZINHA E JANTAR DETALHADOS (z=3.5 a 6.5)
+                // ----------------------------------------------
+                const mesaJantar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.8), matMadeira);
+                mesaJantar.position.set(1.1, 0.4, 3.5); interiorGroup.add(mesaJantar);
+                for(let i=0; i<4; i++) {
+                    const cadeira = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.35), matBranco);
+                    cadeira.position.set(1.1 + (i%2 === 0 ? -0.4 : 0.4), 0.225, 3.5 + (i < 2 ? -0.5 : 0.5));
+                    interiorGroup.add(cadeira);
+                }
+
+                const matPia = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 });
+                const matFogao = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+                const bancadaPia = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 2.0), matCalcada);
+                bancadaPia.position.set(0.4, 0.45, 5.5); interiorGroup.add(bancadaPia);
+                
+                const cuba = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.6), matPia);
+                cuba.position.set(0.4, 0.92, 5.5); interiorGroup.add(cuba);
+
+                const fogao = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.6), matBranco);
+                fogao.position.set(0.4, 0.45, 4.2); interiorGroup.add(fogao);
+                const tampaFogao = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.5), matFogao);
+                tampaFogao.position.set(0.4, 0.91, 4.2); interiorGroup.add(tampaFogao);
+
+                const geladeira = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.7), matBranco);
+                geladeira.position.set(1.4, 0.9, 6.1); interiorGroup.add(geladeira);
+
+                const armario = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 2.0), matMadeira);
+                armario.position.set(0.25, 2.2, 5.5); interiorGroup.add(armario);
+
+                createIntLabel("COZINHA E JANTAR", xBase + 1.2, 2.5, 4.5, interiorGroup);
+
+                // ----------------------------------------------
+                // SUPERIOR - Laje Vazada Perfeita
+                // ----------------------------------------------
+                // 1. Piso Quarto 1 (z=0 a 4.5, larg=2.9)
+                const p1 = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.1, 4.5), matMadeira);
+                p1.position.set(1.55, hTerreo, 2.25); interiorGroup.add(p1);
+                // 2. Piso Banheiro (z=4.5 a 6.5, larg=1.4)
+                const p2 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 2.0), matMadeira);
+                p2.position.set(0.7, hTerreo, 5.5); interiorGroup.add(p2);
+                // 3. Piso Corredor (z=4.5 a 6.5, larg=0.8) -> Vão da escada livre: x=2.2 a 3.1
+                const p3 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 2.0), matMadeira);
+                p3.position.set(1.8, hTerreo, 5.5); interiorGroup.add(p3);
+                // 4. Piso Patamar e Quarto 2 (z=6.5 a 10, larg=2.9)
+                const p4 = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.1, 3.5), matMadeira);
+                p4.position.set(1.55, hTerreo, 8.25); interiorGroup.add(p4);
+
+                // ----------------------------------------------
+                // SUPERIOR - Divisórias Milimétricas
+                // ----------------------------------------------
+                const guardaVidro = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 2.0), matVidro);
+                guardaVidro.position.set(2.2, hTerreo + 0.5, 5.5); 
+                interiorGroup.add(guardaVidro);
+
+                const pQ1 = new THREE.Mesh(new THREE.BoxGeometry(2.9, hSup, 0.1), matParedeInt);
+                pQ1.position.set(1.55, hTerreo + hSup/2, 4.5); interiorGroup.add(pQ1);
+                houseWallsToHide.push(pQ1);
+
+                const pBanho = new THREE.Mesh(new THREE.BoxGeometry(0.1, hSup, 2.0), matParedeInt);
+                pBanho.position.set(1.4, hTerreo + hSup/2, 5.5); interiorGroup.add(pBanho);
+                houseWallsToHide.push(pBanho); 
+
+                const pQ2Esq = new THREE.Mesh(new THREE.BoxGeometry(1.4, hSup, 0.1), matParedeInt);
+                pQ2Esq.position.set(0.7, hTerreo + hSup/2, 6.5); interiorGroup.add(pQ2Esq);
+                houseWallsToHide.push(pQ2Esq);
+
+                const pQ2Dir = new THREE.Mesh(new THREE.BoxGeometry(1.7, hSup, 0.1), matParedeInt);
+                pQ2Dir.position.set(2.25, hTerreo + hSup/2, 7.5); interiorGroup.add(pQ2Dir);
+                houseWallsToHide.push(pQ2Dir);
+                
+                // ----------------------------------------------
+                // SUPERIOR - Móveis
+                // ----------------------------------------------
+                const camaCasal = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), matCama);
+                camaCasal.position.set(1.55, hTerreo + 0.25, 2.5); interiorGroup.add(camaCasal);
+                const guardaRoupa = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2, 0.6), matMadeira);
+                guardaRoupa.position.set(1.55, hTerreo + 1.1, 0.4); interiorGroup.add(guardaRoupa);
+                createIntLabel("QUARTO CASAL (2.9m x 4.5m)", xBase + 1.55, hTerreo + 2.0, 2.5, interiorGroup);
+
+                const boxBanhoSup = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.0, 0.8), matVidro);
+                boxBanhoSup.position.set(0.7, hTerreo + 1.0, 4.9); interiorGroup.add(boxBanhoSup);
+                const vasoSup = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.5), matBranco);
+                vasoSup.position.set(0.7, hTerreo + 0.2, 5.8); interiorGroup.add(vasoSup);
+                const piaBanhoSup = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.8), matCalcada);
+                piaBanhoSup.position.set(0.7, hTerreo + 0.4, 6.0); interiorGroup.add(piaBanhoSup);
+                createIntLabel("BANHEIRO (1.4m x 2.0m)", xBase + 0.7, hTerreo + 1.5, 5.5, interiorGroup);
+
+                const guardaRoupa2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.2, 0.8), matMadeira);
+                guardaRoupa2.position.set(0.4, hTerreo + 1.1, 7.0); interiorGroup.add(guardaRoupa2); 
+                
+                const camaSolteiro = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 2.0), matCama);
+                camaSolteiro.position.set(2.4, hTerreo + 0.25, 8.8); interiorGroup.add(camaSolteiro);
+                const mesaEstudo = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.6), matMadeira);
+                mesaEstudo.position.set(0.8, hTerreo + 0.4, 9.6); interiorGroup.add(mesaEstudo);
+                createIntLabel("QUARTO 2 (2.9m x 3.5m)", xBase + 1.55, hTerreo + 2.0, 8.5, interiorGroup);
+
+                createIntLabel("GARAGEM (3.1m x 2.5m)", xBase + w/2, 1.0, 8.75, interiorGroup);
+                
+                group.add(interiorGroup);
+            }
+
+            group.position.set(xBase, 0, 0);
+            return group;
+        }
+
+        // Criando as Casas
+        casa1Group = createHouseBlock(0, false, 0xcceeff, 0xffeecc, true);
+        scene.add(casa1Group); // Casa 1 separada do ambientGroup!
+        ambientGroup.add(createHouseBlock(6.9, true, 0xccffee, 0xffccee, false));
+
+        // Vizinhança
+        const matVizinho = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 1.0 });
+        function createDummyBuilding(x, z, w, d, minH, maxH) {
+            const h = minH + Math.random() * (maxH - minH);
+            const building = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), matVizinho);
+            building.position.set(x, h/2, z); building.castShadow = true; ambientGroup.add(building);
+        }
+        for(let z = 2; z < 25; z += 6) { createDummyBuilding(-4, z, 5, 5, 3, 6); createDummyBuilding(-11, z, 6, 5, 3, 8); }
+        for(let z = 2; z < 25; z += 6) { createDummyBuilding(14, z, 5, 5, 3, 6); createDummyBuilding(21, z, 6, 5, 3, 8); }
+        for(let x = -15; x <= 25; x += 8) { createDummyBuilding(x, -15, 6, 8, 4, 10); createDummyBuilding(x, -25, 6, 8, 4, 12); }
+
+        // --- LÓGICA DO BOTÃO ---
+        document.getElementById('btn-interior').addEventListener('click', () => {
+            isInteriorMode = !isInteriorMode;
+            
+            if(isInteriorMode) {
+                document.getElementById('btn-interior').innerText = "🏘️ Voltar ao Condomínio";
+                document.getElementById('btn-interior').style.background = "linear-gradient(135deg, #4fc3f7, #1e88e5)";
+                
+                // ESCONDE TODO O RESTO DO MUNDO
+                ambientGroup.visible = false;
+                
+                // Deixa as paredes e teto transparentes da Casa 1
+                houseWallsToHide.forEach(mesh => {
+                    if(mesh.material) {
+                        mesh.material.transparent = true;
+                        mesh.material.opacity = 0.2;
+                    }
+                });
+
+                // Mostra as labels internas
+                interiorLabels.forEach(lbl => lbl.visible = true);
+
+                // Move a câmera
+                camera.position.set(-8, 5, 5);
+                controls.target.set(1.5, 3, 5);
+            } else {
+                document.getElementById('btn-interior').innerText = "🔍 Ver Interior da Casa 1";
+                document.getElementById('btn-interior').style.background = "linear-gradient(135deg, #e2a85c, #d18d3c)";
+                
+                // MOSTRA O MUNDO NOVAMENTE
+                ambientGroup.visible = true;
+                
+                // Volta as paredes da Casa 1 ao normal
+                houseWallsToHide.forEach(mesh => {
+                    if(mesh.material) {
+                        mesh.material.opacity = 1.0;
+                    }
+                });
+
+                // Esconde as labels internas
+                interiorLabels.forEach(lbl => lbl.visible = false);
+
+                // Volta câmera
+                camera.position.set(5, 20, -15);
+                controls.target.set(5, 0, 10);
+            }
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
